@@ -123,6 +123,3 @@ if st.session_state.df_activos is not None and not st.session_state.df_activos.e
         st.dataframe(pd.DataFrame(st.session_state.ganadores), use_container_width=True)
 else:
     st.warning("Carga el archivo Excel desde el panel lateral para comenzar el sorteo.")
-
-else:
-    st.warning("👈 Por favor, hacé clic en el botón de la izquierda para cargar los datos del Excel.")
