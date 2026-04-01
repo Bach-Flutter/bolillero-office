@@ -10,7 +10,7 @@ st.title("🎰 Sorteo de Equipos")
 def cargar_datos():
     try:
         # Cargamos el archivo
-        df = pd.read_excel("Sorteo_Empleados.xlsx")
+        df = pd.read_excel("Sorteo_Empleados2.xlsx")
         
         # PASO 1: Limpiamos espacios en blanco en los nombres de las columnas
         df.columns = df.columns.str.strip()
