@@ -2,97 +2,98 @@ import streamlit as st
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Bolillero Final - San Juan", layout="wide")
+st.set_page_config(page_title="Bolillero de Adjudicación - San Juan", layout="wide")
 
 archivo_excel = "Sorteo_Empleados3.xlsx"
 
-def cargar_todo_el_excel():
+def cargar_datos():
     try:
         df = pd.read_excel(archivo_excel)
         df.columns = df.columns.str.strip()
         return df
     except Exception as e:
-        st.error(f"Error al leer el Excel: {e}")
+        st.error(f"Error al leer Excel: {e}")
         return None
 
-st.title("🎰 Sistema de Adjudicación con Anulación de Fila")
-st.caption("Regla de Oro: El ganador es eliminado automáticamente de todas las categorías restantes.")
+st.title("🎰 Sistema de Adjudicación por Opciones")
 
-# --- ESTADO DE LA SESIÓN (La memoria del programa) ---
 if 'df_activos' not in st.session_state:
-    st.session_state.df_activos = None 
+    st.session_state.df_activos = None
 if 'ganadores' not in st.session_state:
     st.session_state.ganadores = []
 
-# --- PANEL DE CONTROL LATERAL ---
 with st.sidebar:
-    st.header("⚙️ Administración")
-    if st.button("📥 Cargar Lista Nueva (Reset)"):
-        data = cargar_todo_el_excel()
+    st.header("⚙️ Configuración")
+    if st.button("📥 Sincronizar Excel de GitHub"):
+        data = cargar_datos()
         if data is not None:
             st.session_state.df_activos = data
             st.session_state.ganadores = []
-            st.success("Lista sincronizada y lista para el sorteo.")
+            st.success("Lista sincronizada.")
     
     st.markdown("---")
-    categoria_actual = st.selectbox(
-        "¿Qué categoría sorteamos ahora?",
-        ["PC", "Notebook", "Impresoras", "Mobiliario"]
+    # Filtro por Categoría General
+    categoria_padre = st.selectbox(
+        "Categoría a sortear:",
+        ["Pc", "Notebook", "Impresora", "Mobiliario"]
     )
     
     if st.session_state.df_activos is not None:
-        st.metric("Total Participantes en Bolillero", len(st.session_state.df_activos))
+        st.metric("Personas en bolillero", len(st.session_state.df_activos))
 
-# --- LÓGICA DEL SORTEO ---
+# --- LÓGICA DE SORTEO ---
 if st.session_state.df_activos is not None and not st.session_state.df_activos.empty:
     
-    if st.button(f"✨ SORTEAR {categoria_actual.upper()}", type="primary", use_container_width=True):
-        # 1. Buscar la columna correcta (sin importar mayúsculas)
-        col_buscada = next((c for c in st.session_state.df_activos.columns if categoria_actual.lower() in c.lower()), None)
+    if st.button(f"✨ SORTEAR {categoria_padre.upper()}", type="primary", use_container_width=True):
         
-        if col_buscada:
-            # 2. Solo participan los que tengan algo anotado en esa columna Y sigan activos
-            participantes_validos = st.session_state.df_activos[st.session_state.df_activos[col_buscada].notna()]
+        # 1. Identificar todas las columnas que pertenecen a esa categoría (ej: Pc - opción 1, Pc - opción 2...)
+        cols_categoria = [c for c in st.session_state.df_activos.columns if categoria_padre.lower() in c.lower()]
+        
+        # 2. Filtrar empleados que tengan al menos un "1" en alguna de esas columnas
+        # El .any(axis=1) verifica si hay algún '1' en la fila para esas columnas
+        mask = (st.session_state.df_activos[cols_categoria] == 1).any(axis=1)
+        participantes_validos = st.session_state.df_activos[mask]
+        
+        if not participantes_validos.empty:
+            indice_ganador = random.choice(participantes_validos.index)
+            fila = participantes_validos.loc[indice_ganador]
             
-            if not participantes_validos.empty:
-                # 3. SORTEO: Elegimos el índice de la fila
-                indice_ganador = random.choice(participantes_validos.index)
-                
-                # 4. CAPTURAMOS LOS DATOS antes de borrar la fila
-                info = participantes_validos.loc[indice_ganador].to_dict()
-                
-                registro_final = {
-                    'Nombre': info.get('Nombre', 'N/D'),
-                    'Sector': info.get('Sector', info.get('SECTOR', 'General')),
-                    'Premio': f"{categoria_actual}: {info[col_buscada]}"
-                }
-                
-                # 5. ANULACIÓN DE FILA: Se elimina del bolillero permanentemente
-                st.session_state.df_activos = st.session_state.df_activos.drop(indice_ganador)
-                
-                # Guardamos en el acta
-                st.session_state.ganadores.insert(0, registro_final)
-                st.balloons()
-            else:
-                st.warning(f"No hay más personas que hayan aplicado para la categoría: {categoria_actual}")
+            # 3. Identificar EXACTAMENTE qué opción ganó (la primera que tenga un 1)
+            opcion_ganada = "Opción General"
+            for col in cols_categoria:
+                if fila[col] == 1:
+                    opcion_ganada = col
+                    break
+            
+            # 4. Registrar ganador
+            registro = {
+                'Nombre': fila.get('Nombre', 'N/N'),
+                'Sector': fila.get('Sector o área', 'General'),
+                'Adjudicado': opcion_ganada
+            }
+            
+            st.session_state.ganadores.insert(0, registro)
+            
+            # 5. ANULACIÓN DE FILA (Se va del bolillero)
+            st.session_state.df_activos = st.session_state.df_activos.drop(indice_ganador)
+            st.balloons()
         else:
-            st.error(f"No encontré la columna '{categoria_actual}' en el archivo Excel.")
+            st.warning(f"No hay participantes registrados para ninguna opción de {categoria_padre}.")
 
-    # --- PRESENTACIÓN DEL GANADOR ---
+    # --- MOSTRAR RESULTADO ---
     if st.session_state.ganadores:
-        ultimo = st.session_state.ganadores[0]
+        g = st.session_state.ganadores[0]
         st.markdown(f"""
-            <div style="background-color: #f0fdf4; padding: 25px; border-radius: 15px; border: 3px solid #22c55e; text-align: center; margin-bottom: 20px;">
-                <h1 style="color: #166534; font-size: 55px; margin-bottom: 10px;">{ultimo['Nombre']}</h1>
-                <h2 style="color: #15803d; margin: 0;">{ultimo['Premio']}</h2>
-                <p style="font-size: 18px; color: #166534; margin-top: 10px;">Sector: {ultimo['Sector']}</p>
-                <p style="color: #dc2626; font-weight: bold;">⚠️ Fila anulada para el resto del sorteo</p>
+            <div style="background-color: #f0f7ff; padding: 20px; border-radius: 15px; border: 2px solid #0078d4; text-align: center;">
+                <h3 style="color: #0078d4; margin:0;">🏆 GANADOR ADJUDICADO</h3>
+                <h1 style="font-size: 50px; margin:10px 0;">{g['Nombre']}</h1>
+                <p style="font-size: 20px;"><b>Sector:</b> {g['Sector']} | <b>Premio:</b> {g['Adjudicado']}</p>
             </div>
         """, unsafe_allow_html=True)
 
-    # --- ACTA DE RESULTADOS ---
-    st.subheader("📋 Acta de Ganadores (Registros Inamovibles)")
+    # --- TABLA DE HISTORIAL ---
+    st.subheader("📋 Acta de Adjudicaciones Realizadas")
     if st.session_state.ganadores:
         st.table(pd.DataFrame(st.session_state.ganadores))
 else:
-    st.warning("👈 Por favor, carga la lista de empleados para comenzar.")
+    st.warning("Carga el Excel desde el panel lateral para iniciar.")
