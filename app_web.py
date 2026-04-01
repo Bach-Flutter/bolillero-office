@@ -3,129 +3,126 @@ import pandas as pd
 import random
 import re
 
-st.set_page_config(page_title="Bolillero San Juan - Final", layout="wide")
+st.set_page_config(page_title="Bolillero de Adjudicación Oficial", layout="wide")
 
-# --- FUNCIONES DE APOYO ---
+archivo_excel = "Sorteo_Empleados4.xlsx"
+
 def cargar_datos():
     try:
-        # Forzamos la lectura del archivo que subiste a GitHub
-        df = pd.read_excel("Sorteo_Empleados4.xlsx")
+        df = pd.read_excel(archivo_excel)
         df.columns = df.columns.str.strip()
-        # Convertimos todo a números (por si hay celdas vacías o con texto)
-        # Esto asegura que el '1' sea detectado siempre
-        for col in df.columns:
-            if col not in ['Nombre', 'Sector o área']:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         return df
     except Exception as e:
         st.error(f"Error al leer Excel: {e}")
         return None
 
-def limpiar_texto_premio(nombre_col):
-    # Extraer solo el número para mostrarlo bonito
-    numeros = re.findall(r'\d+', nombre_col)
-    num_txt = f"N° {numeros[0]}" if numeros else ""
-    
-    if "Pc" in nombre_col: return f"Computadora - Opción {num_txt}"
-    if "Notebook" in nombre_col: return f"Notebook - Opción {num_txt}"
-    if "Impresora" in nombre_col: return f"Impresora - Opción {num_txt}"
-    if "Mobiliario" in nombre_col: return f"Mobiliario - Opción {num_txt}"
-    return nombre_col
+def formatear_nombre_premio(nombre_columna):
+    # Extrae el número de la columna usando una expresión regular
+    numeros = re.findall(r'\d+', nombre_columna)
+    if numeros:
+        # Si encuentra un número, lo pone bonito. Ej: "Pc - Opción N° 1"
+        categoria = nombre_columna.split('-')[0].strip().capitalize()
+        return f"{categoria} - Opción N° {numeros[0]}"
+    return nombre_columna
 
-# --- INICIALIZACIÓN DE MEMORIA (CRITICO) ---
-if 'df_bolillero' not in st.session_state:
-    st.session_state.df_bolillero = None
-if 'lista_ganadores' not in st.session_state:
-    st.session_state.lista_ganadores = []
-if 'premios_entregados' not in st.session_state:
-    st.session_state.premios_entregados = [] # Aquí van las columnas anuladas
-
-st.title("🎰 Bolillero de Adjudicación Directa")
+st.title("🎰 Sistema de Adjudicación de Equipamiento")
 st.markdown("---")
 
-# --- PANEL DE CONTROL ---
+# --- MEMORIA DEL SISTEMA ---
+if 'df_activos' not in st.session_state:
+    st.session_state.df_activos = None
+if 'ganadores' not in st.session_state:
+    st.session_state.ganadores = []
+if 'premios_agotados' not in st.session_state:
+    st.session_state.premios_agotados = []
+
 with st.sidebar:
-    st.header("⚙️ Administración")
-    if st.button("🔄 REINICIAR TODO (Cargar Excel)"):
+    st.header("⚙️ Panel de Administración")
+    if st.button("📥 Sincronizar Excel y Resetear"):
         data = cargar_datos()
         if data is not None:
-            st.session_state.df_bolillero = data
-            st.session_state.lista_ganadores = []
-            st.session_state.premios_entregados = []
-            st.success("Datos cargados correctamente.")
-
+            st.session_state.df_activos = data
+            st.session_state.ganadores = []
+            st.session_state.premios_agotados = []
+            st.success("Sistema reiniciado con éxito.")
+    
     st.markdown("---")
-    categoria = st.selectbox("Categoría a sortear ahora:", ["Pc", "Notebook", "Impresora", "Mobiliario"])
+    # Selector de Categoría
+    categoria_padre = st.selectbox(
+        "Seleccione categoría a sortear:",
+        ["Pc", "Notebook", "Impresora", "Mobiliario"]
+    )
     
-    if st.session_state.df_bolillero is not None:
-        st.metric("Personas disponibles", len(st.session_state.df_bolillero))
-        st.write("**Premios ya entregados:**", len(st.session_state.premios_entregados))
+    if st.session_state.df_activos is not None:
+        st.metric("Personas en bolillero", len(st.session_state.df_activos))
+    
+    if st.session_state.premios_agotados:
+        st.subheader("🚫 Opciones Agotadas:")
+        for p in st.session_state.premios_agotados:
+            st.write(f"• {p}")
 
-# --- LÓGICA DEL SORTEO ---
-if st.session_state.df_bolillero is not None:
+# --- LÓGICA DE SORTEO ---
+if st.session_state.df_activos is not None and not st.session_state.df_activos.empty:
     
-    if st.button(f"🚀 SORTEAR {categoria.upper()}", type="primary", use_container_width=True):
+    if st.button(f"✨ SORTEAR {categoria_padre.upper()}", type="primary", use_container_width=True):
         
-        # 1. Identificar columnas de la categoría seleccionada
-        todas_las_cols = st.session_state.df_bolillero.columns
-        cols_de_categoria = [c for c in todas_las_cols if categoria.lower() in c.lower()]
+        # 1. Filtrar SOLO las columnas que empiezan con la categoría seleccionada
+        # Esto evita que una "Pc" se confunda con una "Notebook"
+        cols_exactas = [c for c in st.session_state.df_activos.columns if c.lower().startswith(categoria_padre.lower())]
         
-        # 2. FILTRO DE PREMIOS: Quitar las columnas que ya fueron entregadas
-        cols_disponibles = [c for c in cols_de_categoria if c not in st.session_state.premios_entregados]
+        # 2. Quitar las que ya salieron (Stock cero)
+        cols_disponibles = [c for c in cols_exactas if c not in st.session_state.premios_agotados]
         
         if not cols_disponibles:
-            st.error(f"❌ Ya no quedan opciones físicas de {categoria} en el inventario.")
+            st.error(f"No quedan más opciones disponibles para {categoria_padre}.")
         else:
-            # 3. FILTRO DE PERSONAS: Quiénes marcaron '1' en las opciones que QUEDAN
-            # Usamos loc para asegurarnos de trabajar sobre los datos actuales
-            df_actual = st.session_state.df_bolillero
-            participantes_aptos = df_actual[(df_actual[cols_disponibles] == 1).any(axis=1)]
+            # 3. Buscar quiénes marcaron '1' en las opciones que quedan de esa categoría
+            mask = (st.session_state.df_activos[cols_disponibles] == 1).any(axis=1)
+            aptos = st.session_state.df_activos[mask]
             
-            if participantes_aptos.empty:
-                st.warning(f"No hay participantes que hayan elegido las opciones de {categoria} que aún están disponibles.")
-            else:
-                # 4. ELEGIR GANADOR AL AZAR
-                indice_ganador = random.choice(participantes_aptos.index)
-                fila_ganador = participantes_aptos.loc[indice_ganador]
+            if not aptos.empty:
+                idx = random.choice(aptos.index)
+                fila = aptos.loc[idx]
                 
-                # 5. DETERMINAR QUÉ OPCIÓN GANÓ (la primera que tenga un 1 de las disponibles)
-                opcion_final_col = None
-                for c in cols_disponibles:
-                    if fila_ganador[c] == 1:
-                        opcion_final_col = c
+                # 4. Ver qué opción específica ganó
+                col_ganadora_original = None
+                for col in cols_disponibles:
+                    if fila[col] == 1:
+                        col_ganadora_original = col
                         break
                 
-                # 6. EJECUTAR ANULACIONES (Doble seguridad)
-                # Anulamos el premio para que no vuelva a salir
-                st.session_state.premios_entregados.append(opcion_final_col)
-                # Anulamos a la persona (borramos la fila)
-                st.session_state.df_bolillero = st.session_state.df_bolillero.drop(indice_ganador)
+                # 5. Formatear para el acta
+                premio_limpio = formatear_nombre_premio(col_ganadora_original)
                 
-                # 7. REGISTRAR RESULTADO
-                resultado = {
-                    "Ganador": fila_ganador.get('Nombre', 'N/N'),
-                    "Sector": fila_ganador.get('Sector o área', 'General'),
-                    "Equipo Adjudicado": limpiar_texto_premio(opcion_final_col)
-                }
-                st.session_state.lista_ganadores.insert(0, resultado)
+                # 6. Registrar y eliminar
+                st.session_state.ganadores.insert(0, {
+                    'Nombre': fila.get('Nombre', 'N/N'),
+                    'Sector': fila.get('Sector o área', 'General'),
+                    'Premio Adjudicado': premio_limpio
+                })
+                
+                st.session_state.premios_agotados.append(col_ganadora_original)
+                st.session_state.df_activos = st.session_state.df_activos.drop(idx)
                 st.balloons()
+            else:
+                st.warning(f"Ningún participante restante ha solicitado opciones de {categoria_padre} que sigan disponibles.")
 
-    # --- MOSTRAR ÚLTIMO RESULTADO ---
-    if st.session_state.lista_ganadores:
-        res = st.session_state.lista_ganadores[0]
+    # --- RESULTADOS ---
+    if st.session_state.ganadores:
+        g = st.session_state.ganadores[0]
         st.markdown(f"""
-            <div style="background-color: #f0fdf4; padding: 25px; border-radius: 15px; border: 3px solid #22c55e; text-align: center;">
-                <h1 style="color: #166534; margin:0;">{res['Ganador']}</h1>
-                <h2 style="color: #15803d; margin:10px 0;">{res['Equipo Adjudicado']}</h2>
-                <p style="font-size: 20px;">Sector: {res['Sector']}</p>
-                <p style="color: #dc2626; font-weight: bold;">⚠️ PREMIO Y GANADOR RETIRADOS DEL SISTEMA</p>
+            <div style="background-color: #f8fafc; padding: 25px; border-radius: 20px; border: 2px solid #0078d4; text-align: center;">
+                <h2 style="color: #0078d4; margin:0;">🎊 ADJUDICACIÓN CONFIRMADA 🎊</h2>
+                <h1 style="font-size: 55px; margin:15px 0; color: #1e293b;">{g['Nombre']}</h1>
+                <p style="font-size: 22px;"><b>Área:</b> {g['Sector']} | <b>Equipo:</b> <span style="color: #e11d48;">{g['Premio Adjudicado']}</span></p>
             </div>
         """, unsafe_allow_html=True)
 
-    # --- HISTORIAL ---
-    st.subheader("📜 Acta de Resultados (Historial)")
-    if st.session_state.lista_ganadores:
-        st.table(pd.DataFrame(st.session_state.lista_ganadores))
+    st.subheader("📋 Acta de Ganadores")
+    if st.session_state.ganadores:
+        st.dataframe(pd.DataFrame(st.session_state.ganadores), use_container_width=True)
+else:
+    st.warning("Carga el archivo Excel desde el panel lateral para comenzar el sorteo.")
 
 else:
     st.warning("👈 Por favor, hacé clic en el botón de la izquierda para cargar los datos del Excel.")
