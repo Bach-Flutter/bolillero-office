@@ -6,7 +6,7 @@ from datetime import datetime
 st.set_page_config(page_title="Bolillero de Equipamiento", layout="wide")
 
 # Nombre del archivo en tu GitHub
-archivo_excel = "Sorteo_Empleados.xlsx"
+archivo_excel = "Sorteo_Empleados2.xlsx"
 
 def cargar_todo_el_excel():
     try:
