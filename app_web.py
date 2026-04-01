@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import random
+import re
 
-st.set_page_config(page_title="Bolillero con Inventario - San Juan", layout="wide")
+st.set_page_config(page_title="Bolillero de Adjudicación Oficial", layout="wide")
 
 archivo_excel = "Sorteo_Empleados4.xlsx"
 
@@ -15,98 +16,110 @@ def cargar_datos():
         st.error(f"Error al leer Excel: {e}")
         return None
 
-st.title("🎰 Sistema de Adjudicación con Control de Stock")
-st.caption("Regla: Si una opción (ej: PC - Opción 1) ya salió, queda anulada para el resto de los participantes.")
+def formatear_nombre_premio(nombre_columna):
+    # Extrae el número de la columna usando una expresión regular
+    numeros = re.findall(r'\d+', nombre_columna)
+    if numeros:
+        # Si encuentra un número, lo pone bonito. Ej: "Pc - Opción N° 1"
+        categoria = nombre_columna.split('-')[0].strip().capitalize()
+        return f"{categoria} - Opción N° {numeros[0]}"
+    return nombre_columna
+
+st.title("🎰 Sistema de Adjudicación de Equipamiento")
+st.markdown("---")
 
 # --- MEMORIA DEL SISTEMA ---
 if 'df_activos' not in st.session_state:
     st.session_state.df_activos = None
 if 'ganadores' not in st.session_state:
     st.session_state.ganadores = []
-if 'stock_anulado' not in st.session_state:
-    st.session_state.stock_anulado = [] # Aquí guardamos los premios que ya salieron
+if 'premios_agotados' not in st.session_state:
+    st.session_state.premios_agotados = []
 
 with st.sidebar:
-    st.header("⚙️ Configuración")
-    if st.button("📥 Sincronizar Excel y Reset Stock"):
+    st.header("⚙️ Panel de Administración")
+    if st.button("📥 Sincronizar Excel y Resetear"):
         data = cargar_datos()
         if data is not None:
             st.session_state.df_activos = data
             st.session_state.ganadores = []
-            st.session_state.stock_anulado = []
-            st.success("Inventario y Lista reseteados.")
+            st.session_state.premios_agotados = []
+            st.success("Sistema reiniciado con éxito.")
     
     st.markdown("---")
+    # Selector de Categoría
     categoria_padre = st.selectbox(
-        "Categoría a sortear:",
+        "Seleccione categoría a sortear:",
         ["Pc", "Notebook", "Impresora", "Mobiliario"]
     )
     
-    if st.session_state.stock_anulado:
-        st.subheader("🚫 Premios Agotados:")
-        for item in st.session_state.stock_anulado:
-            st.write(f"- {item}")
+    if st.session_state.df_activos is not None:
+        st.metric("Personas en bolillero", len(st.session_state.df_activos))
+    
+    if st.session_state.premios_agotados:
+        st.subheader("🚫 Opciones Agotadas:")
+        for p in st.session_state.premios_agotados:
+            st.write(f"• {p}")
 
-# --- LÓGICA DE SORTEO CON FILTRO DE STOCK ---
+# --- LÓGICA DE SORTEO ---
 if st.session_state.df_activos is not None and not st.session_state.df_activos.empty:
     
     if st.button(f"✨ SORTEAR {categoria_padre.upper()}", type="primary", use_container_width=True):
         
-        # 1. Identificar columnas de la categoría
-        cols_cat = [c for c in st.session_state.df_activos.columns if categoria_padre.lower() in c.lower()]
+        # 1. Filtrar SOLO las columnas que empiezan con la categoría seleccionada
+        # Esto evita que una "Pc" se confunda con una "Notebook"
+        cols_exactas = [c for c in st.session_state.df_activos.columns if c.lower().startswith(categoria_padre.lower())]
         
-        # 2. Filtrar columnas que NO estén en la lista de stock_anulado
-        cols_disponibles = [c for c in cols_cat if c not in st.session_state.stock_anulado]
+        # 2. Quitar las que ya salieron (Stock cero)
+        cols_disponibles = [c for c in cols_exactas if c not in st.session_state.premios_agotados]
         
         if not cols_disponibles:
-            st.error(f"⚠️ ¡Atención! Ya no quedan opciones disponibles para {categoria_padre}.")
+            st.error(f"No quedan más opciones disponibles para {categoria_padre}.")
         else:
-            # 3. Buscar participantes que marcaron alguna de las OPCIONES DISPONIBLES
+            # 3. Buscar quiénes marcaron '1' en las opciones que quedan de esa categoría
             mask = (st.session_state.df_activos[cols_disponibles] == 1).any(axis=1)
-            participantes_aptos = st.session_state.df_activos[mask]
+            aptos = st.session_state.df_activos[mask]
             
-            if not participantes_aptos.empty:
-                indice_ganador = random.choice(participantes_aptos.index)
-                fila = participantes_aptos.loc[indice_ganador]
+            if not aptos.empty:
+                idx = random.choice(aptos.index)
+                fila = aptos.loc[idx]
                 
-                # 4. Determinar qué opción disponible ganó el empleado
-                opcion_final = None
+                # 4. Ver qué opción específica ganó
+                col_ganadora_original = None
                 for col in cols_disponibles:
                     if fila[col] == 1:
-                        opcion_final = col
+                        col_ganadora_original = col
                         break
                 
-                # 5. REGISTRAR Y ANULAR
+                # 5. Formatear para el acta
+                premio_limpio = formatear_nombre_premio(col_ganadora_original)
+                
+                # 6. Registrar y eliminar
                 st.session_state.ganadores.insert(0, {
                     'Nombre': fila.get('Nombre', 'N/N'),
                     'Sector': fila.get('Sector o área', 'General'),
-                    'Premio': opcion_final
+                    'Premio Adjudicado': premio_limpio
                 })
                 
-                # ANULAMOS LA OPCIÓN (Ya no hay más de este equipo)
-                st.session_state.stock_anulado.append(opcion_final)
-                
-                # ANULAMOS LA FILA (El empleado ya ganó, se va)
-                st.session_state.df_activos = st.session_state.df_activos.drop(indice_ganador)
-                
+                st.session_state.premios_agotados.append(col_ganadora_original)
+                st.session_state.df_activos = st.session_state.df_activos.drop(idx)
                 st.balloons()
             else:
-                st.warning(f"No hay participantes que califiquen para las opciones de {categoria_padre} que aún quedan.")
+                st.warning(f"Ningún participante restante ha solicitado opciones de {categoria_padre} que sigan disponibles.")
 
     # --- RESULTADOS ---
     if st.session_state.ganadores:
         g = st.session_state.ganadores[0]
         st.markdown(f"""
-            <div style="background-color: #fff4f4; padding: 20px; border-radius: 15px; border: 2px solid #dc2626; text-align: center;">
-                <h3 style="color: #dc2626; margin:0;">🏆 ADJUDICACIÓN EXITOSA</h3>
-                <h1 style="font-size: 45px; margin:10px 0;">{g['Nombre']}</h1>
-                <p style="font-size: 20px;"><b>Sector:</b> {g['Sector']} | <b>Equipo:</b> {g['Premio']}</p>
-                <p style="color: #666; font-style: italic;">* Esta opción de equipo ha sido retirada del inventario.</p>
+            <div style="background-color: #f8fafc; padding: 25px; border-radius: 20px; border: 2px solid #0078d4; text-align: center;">
+                <h2 style="color: #0078d4; margin:0;">🎊 ADJUDICACIÓN CONFIRMADA 🎊</h2>
+                <h1 style="font-size: 55px; margin:15px 0; color: #1e293b;">{g['Nombre']}</h1>
+                <p style="font-size: 22px;"><b>Área:</b> {g['Sector']} | <b>Equipo:</b> <span style="color: #e11d48;">{g['Premio Adjudicado']}</span></p>
             </div>
         """, unsafe_allow_html=True)
 
-    st.subheader("📋 Acta de Entrega (Premios Únicos)")
+    st.subheader("📋 Acta de Ganadores")
     if st.session_state.ganadores:
-        st.table(pd.DataFrame(st.session_state.ganadores))
+        st.dataframe(pd.DataFrame(st.session_state.ganadores), use_container_width=True)
 else:
-    st.warning("Carga el Excel desde el panel lateral.")
+    st.warning("Carga el archivo Excel desde el panel lateral para comenzar el sorteo.")
