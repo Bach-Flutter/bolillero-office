@@ -2,86 +2,94 @@ import streamlit as st
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Bolillero Pro Chimbas", layout="wide")
+st.set_page_config(page_title="Bolillero Pro - Exclusión Real", layout="wide")
 
 archivo_excel = "Sorteo_Empleados3.xlsx"
 
 def cargar_todo_el_excel():
     try:
         df = pd.read_excel(archivo_excel)
-        df.columns = df.columns.str.strip() # Limpia espacios
+        df.columns = df.columns.str.strip()
         return df
     except Exception as e:
         st.error(f"Error al leer el Excel: {e}")
         return None
 
 st.title("🎰 Bolillero de Adjudicación Única")
+st.caption("Nota: Una vez que un empleado gana, es eliminado del bolillero para el resto del evento.")
 
-if 'df_empleados' not in st.session_state:
-    st.session_state.df_empleados = None
+# --- ESTADO DE LA SESIÓN ---
+if 'df_activos' not in st.session_state:
+    st.session_state.df_activos = None # Aquí guardamos los que NO han ganado
 if 'ganadores' not in st.session_state:
     st.session_state.ganadores = []
 
+# --- PANEL LATERAL ---
 with st.sidebar:
-    st.header("⚙️ Configuración")
-    if st.button("📥 Sincronizar Excel de GitHub"):
+    st.header("⚙️ Control del Sorteo")
+    if st.button("📥 Cargar/Reiniciar Lista"):
         data = cargar_todo_el_excel()
         if data is not None:
-            st.session_state.df_empleados = data
-            st.success(f"Cargados {len(data)} empleados.")
+            st.session_state.df_activos = data
+            st.session_state.ganadores = []
+            st.success("Lista cargada desde GitHub.")
     
     st.markdown("---")
     categoria_actual = st.selectbox(
-        "¿Qué estamos sorteando ahora?",
+        "¿Qué categoría sorteamos?",
         ["PC", "Notebook", "Impresoras", "Mobiliario"]
     )
-
-if st.session_state.df_empleados is not None and not st.session_state.df_empleados.empty:
     
-    if st.button(f"✨ SORTEAR {categoria_actual}", type="primary", use_container_width=True):
-        # Buscamos la columna de forma flexible (no importa mayúsculas)
-        col_buscada = next((c for c in st.session_state.df_empleados.columns if categoria_actual.lower() in c.lower()), None)
+    if st.session_state.df_activos is not None:
+        st.metric("Participantes Restantes", len(st.session_state.df_activos))
+
+# --- LÓGICA PRINCIPAL ---
+if st.session_state.df_activos is not None and not st.session_state.df_activos.empty:
+    
+    if st.button(f"✨ SORTEAR {categoria_actual.upper()}", type="primary", use_container_width=True):
+        # 1. Identificar columna (flexible con mayúsculas/minúsculas)
+        col_buscada = next((c for c in st.session_state.df_activos.columns if categoria_actual.lower() in c.lower()), None)
         
         if col_buscada:
-            participantes_validos = st.session_state.df_empleados[st.session_state.df_empleados[col_buscada].notna()]
+            # 2. Filtrar solo los que aplicaron a este premio y siguen ACTIVOS
+            participantes_validos = st.session_state.df_activos[st.session_state.df_activos[col_buscada].notna()]
             
             if not participantes_validos.empty:
+                # 3. Elegir ganador
                 indice_ganador = random.choice(participantes_validos.index)
-                # Usamos .to_dict() para que sea más fácil de manejar después
-                ganador_dict = participantes_validos.loc[indice_ganador].to_dict()
+                ganador_info = participantes_validos.loc[indice_ganador].to_dict()
                 
-                # Normalizamos nombres para el acta
-                ganador_dict['Nombre_Ganador'] = ganador_dict.get('Nombre', 'Sin Nombre')
-                ganador_dict['Sector_Ganador'] = ganador_dict.get('Sector', ganador_dict.get('SECTOR', 'General'))
-                ganador_dict['Premio_Ganado'] = f"{categoria_actual}: {ganador_dict[col_buscada]}"
+                # 4. Crear registro para el acta
+                registro = {
+                    'Nombre': ganador_info.get('Nombre', 'N/D'),
+                    'Sector': ganador_info.get('Sector', ganador_info.get('SECTOR', 'General')),
+                    'Premio': f"{categoria_actual}: {ganador_info[col_buscada]}"
+                }
                 
-                st.session_state.ganadores.insert(0, ganador_dict)
-                st.session_state.df_empleados = st.session_state.df_empleados.drop(indice_ganador)
+                st.session_state.ganadores.insert(0, registro)
+                
+                # 5. ELIMINACIÓN PERMANENTE: Lo quitamos de los activos
+                st.session_state.df_activos = st.session_state.df_activos.drop(indice_ganador)
                 st.balloons()
             else:
-                st.warning(f"No hay participantes para {categoria_actual}.")
+                st.warning(f"No hay más personas disponibles que hayan aplicado para {categoria_actual}.")
         else:
-            st.error(f"No se encontró la columna '{categoria_actual}' en el Excel.")
+            st.error(f"No se encontró la columna '{categoria_actual}' en tu Excel.")
 
-    # --- MOSTRAR GANADOR ---
+    # --- VISUALIZACIÓN DEL GANADOR ---
     if st.session_state.ganadores:
         ultimo = st.session_state.ganadores[0]
         st.markdown(f"""
-            <div style="background-color: #f0fdf4; padding: 20px; border-radius: 15px; border: 2px solid #22c55e; text-align: center;">
-                <h2 style="color: #166534;">🎉 GANADOR DE {categoria_actual.upper()}</h2>
-                <h1 style="font-size: 45px;">{ultimo['Nombre_Ganador']}</h1>
-                <p style="font-size: 18px;"><b>Adjudicado:</b> {ultimo['Premio_Ganado']}</p>
+            <div style="background-color: #f0fdf4; padding: 25px; border-radius: 15px; border: 3px solid #22c55e; text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #166534; margin: 0;">¡NUEVO GANADOR!</h2>
+                <h1 style="font-size: 50px; margin: 10px 0;">{ultimo['Nombre']}</h1>
+                <p style="font-size: 20px;"><b>Sector:</b> {ultimo['Sector']} | <b>Premio:</b> {ultimo['Premio']}</p>
             </div>
         """, unsafe_allow_html=True)
 
-    # --- ACTA DE GANADORES (LA PARTE DEL ERROR) ---
-    st.subheader("📋 Acta de Ganadores")
+    # --- ACTA DE GANADORES ---
+    st.subheader("📜 Acta Oficial de Ganadores")
     if st.session_state.ganadores:
-        # Creamos el DataFrame solo con las columnas fijas que acabamos de inventar
-        df_acta = pd.DataFrame(st.session_state.ganadores)
-        
-        # Filtramos solo las columnas que SIEMPRE van a estar porque las creamos arriba
-        columnas_seguras = ['Nombre_Ganador', 'Sector_Ganador', 'Premio_Ganado']
-        st.dataframe(df_acta[columnas_seguras], use_container_width=True)
+        st.dataframe(pd.DataFrame(st.session_state.ganadores), use_container_width=True)
 else:
-    st.warning("👈 Cargá la lista en el panel lateral.")
+    st.warning("Carga la lista de empleados para empezar el sorteo.")
