@@ -25,7 +25,7 @@ def formatear_nombre_premio(nombre_columna):
         return f"{categoria} - Opción N° {numeros[0]}"
     return nombre_columna
 
-st.title("🎰 Sistema de Adjudicación de Equipamiento")
+st.title("🎰 Sistema de Adjudicación de Equipos y Mobiliarios")
 st.markdown("---")
 
 # --- MEMORIA DEL SISTEMA ---
@@ -37,7 +37,7 @@ if 'premios_agotados' not in st.session_state:
     st.session_state.premios_agotados = []
 
 with st.sidebar:
-    st.header("⚙️ Panel de Administración")
+    st.header("⚙️ Panel")
     if st.button("📥 Sincronizar Excel y Resetear"):
         data = cargar_datos()
         if data is not None:
