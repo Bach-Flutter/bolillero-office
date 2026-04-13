@@ -5,7 +5,7 @@ import re
 
 st.set_page_config(page_title="Bolillero de Adjudicación Oficial", layout="wide")
 
-archivo_excel = "Sorteo_Empleados4.xlsx"
+archivo_excel = "Programa baja de Equipos y Mobiliarios- Rivulis 2026.xlsx"
 
 def cargar_datos():
     try:
