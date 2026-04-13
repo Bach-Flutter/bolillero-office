@@ -19,7 +19,7 @@ def enviar_a_microsoft(nombre, sector, premio):
 def cargar_datos():
     try:
         # 1. Leer el archivo
-        df = pd.read_excel("Sorteo_Empleados.xlsx")
+        df = pd.read_excel("Sorteo_Empleados_5.xlsx")
         # 2. Limpiar nombres de columnas: quitamos espacios y pasamos a minúsculas para comparar
         df.columns = [str(c).strip() for c in df.columns]
         
