@@ -7,7 +7,7 @@ import requests
 st.set_page_config(page_title="Bolillero Oficial - San Juan", layout="wide")
 
 # --- CONFIGURACIÓN ---
-URL_POWER_AUTOMATE = "TU_URL_AQUÍ"
+URL_POWER_AUTOMATE = "https://default8ecf46185ee64756b55c11a72cc776.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/2dd9539e05fb48bda99496fa07c81148/triggers/manual/paths/invoke?api-version=1"
 
 def enviar_a_microsoft(nombre, sector, premio):
     payload = {"nombre": nombre, "sector": sector, "premio": premio}
