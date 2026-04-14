@@ -5,7 +5,7 @@ import re
 
 st.set_page_config(page_title="Bolillero de Adjudicación Oficial", layout="wide")
 
-archivo_excel = "Sorteo_Empleados_5.xlsx"
+archivo_excel = "Listado_ Definitivo_Sorteo_Empleados.xlsx"
 
 def cargar_datos():
     try:
@@ -20,7 +20,7 @@ def formatear_nombre_premio(nombre_columna):
     # Extrae el número de la columna usando una expresión regular
     numeros = re.findall(r'\d+', nombre_columna)
     if numeros:
-        # Si encuentra un número, lo pone bonito. Ej: "Pc - Opción N° 1"
+        # Si encuentra un número, lo pone bonito. Ej: "Pc - Ganador N° 1"
         categoria = nombre_columna.split('-')[0].strip().capitalize()
         return f"{categoria} - Opción N° {numeros[0]}"
     return nombre_columna
@@ -38,7 +38,7 @@ if 'premios_agotados' not in st.session_state:
 
 with st.sidebar:
     st.header("⚙️ Panel")
-    if st.button("📥 Sincronizar Excel y Resetear"):
+    if st.button("📥 Cargar Excel o Resetear"):
         data = cargar_datos()
         if data is not None:
             st.session_state.df_activos = data
